@@ -56,10 +56,10 @@ input:focus{outline:0;border-color:var(--pri)}
 .panels{display:grid;grid-template-columns:1fr;gap:14px;max-width:520px;margin:0 auto}
 @media(min-width:900px){.panels{grid-template-columns:1fr 1fr;max-width:900px}}
 .panel{position:relative;aspect-ratio:1;container-type:inline-size;border:3px solid #222;background:#fff;overflow:hidden;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.18)}
-.panel svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.panel img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;user-select:none}
 .cap{position:absolute;left:0;top:0;background:#ffe45c;border-right:2.5px solid #222;border-bottom:2.5px solid #222;padding:.8cqw 2.4cqw;font-size:3.3cqw;font-weight:800;border-bottom-right-radius:8px;max-width:92%}
 .cap b{display:inline-block;background:#222;color:#fff;border-radius:50%;width:4.6cqw;height:4.6cqw;line-height:4.6cqw;text-align:center;margin-right:1.6cqw;font-size:3.2cqw}
-.bubble{position:absolute;background:#fff;border:2.5px solid #222;border-radius:5.5cqw;padding:1.6cqw 2.6cqw;display:flex;align-items:center;justify-content:center;font-family:'Jua','Malgun Gothic',sans-serif;font-size:4.1cqw;line-height:1.3;color:#1b1b1b;z-index:2}
+.bubble{position:absolute;background:#fff;border:2.5px solid #222;border-radius:5.5cqw;padding:1.6cqw 2.6cqw;display:flex;align-items:center;justify-content:center;font-family:'Jua','Malgun Gothic',sans-serif;font-size:3.8cqw;line-height:1.3;color:#1b1b1b;z-index:2}
 .bubble.say::after{content:"";position:absolute;left:calc(var(--tx) - 2cqw);bottom:-2.3cqw;width:4cqw;height:4cqw;background:inherit;border-right:2.5px solid #222;border-bottom:2.5px solid #222;transform:rotate(45deg) skew(8deg,8deg);border-bottom-right-radius:3px}
 .bubble.thought{border-radius:7cqw}
 .bubble.thought::before,.bubble.thought::after{content:"";position:absolute;background:inherit;border:2.5px solid #222;border-radius:50%}
@@ -142,7 +142,7 @@ const CFG = {
   // 방 이름 (여러 교육을 동시에 돌릴 때 다르게 지정)
   ROOM: "main",
   // 말풍선 최대 글자 수
-  MAX_CHARS: 34
+  MAX_CHARS: 26
 };
 
 /* =====================================================================
@@ -205,6 +205,18 @@ let offset = 0;        // 서버시간 - 내 시계
 const now = () => Date.now() + offset;
 async function syncTime(){ try{ offset = await DB.offset(); }catch(e){} }
 const teamsOf = () => S.teams || {};
+const tname = n => ((S.teamNames || {})[tkey(n)] || '').trim() || (n + '조');
+async function renameTeam(n){
+  const cur = tname(n);
+  const v = prompt('조 이름을 입력하세요 (최대 12자, 비우면 기본 이름)', cur === n + '조' ? '' : cur);
+  if(v === null) return;
+  const name = v.trim().slice(0, 12);
+  await DB.write('teamNames/' + tkey(n), name || null).catch(() => {});
+  S.teamNames = {...(S.teamNames || {}), [tkey(n)]: name};
+  toast(name ? '조 이름을 바꿨어요: ' + name : '기본 이름으로 되돌렸어요');
+  if(typeof onState === 'function') onState();
+  poll();
+}
 const textsOf = tk => (teamsOf()[tk] || {}).texts || {};
 function gameStatus(){
   const g = S.game || {};
@@ -228,106 +240,23 @@ async function poll(){
 function startPolling(ms){ clearInterval(pollTimer); poll(); pollTimer = setInterval(poll, ms); }
 
 /* =====================================================================
-   웹툰 장면 (SVG 직접 드로잉)
+   웹툰 장면 (모노 만화체 이미지 + 빈 말풍선)  ─ panel1~4.jpg
+   x,y,w,h = 말풍선 위치/크기(%), tx = 꼬리 위치(말풍선 안 %)
    ===================================================================== */
-const ST = 'stroke="#262626" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"';
-function person(o){
-  const {x,y,s=1,shirt='#3d5a99',hair='#2a2a2a',hs='short',expr='smile',skin='#ffdcb8',tie=null,glasses=false,armsUp=false,extra='',tag=true} = o;
-  let g = `<g transform="translate(${x} ${y}) scale(${s})">`;
-  if(armsUp){
-    g += `<path d="M-40 84 Q-74 44 -63 -8" fill="none" stroke="#262626" stroke-width="21" stroke-linecap="round"/><path d="M40 84 Q74 44 63 -8" fill="none" stroke="#262626" stroke-width="21" stroke-linecap="round"/>`;
-    g += `<path d="M-40 84 Q-74 44 -63 -8" fill="none" stroke="${shirt}" stroke-width="16" stroke-linecap="round"/><path d="M40 84 Q74 44 63 -8" fill="none" stroke="${shirt}" stroke-width="16" stroke-linecap="round"/>`;
-    g += `<circle cx="-63" cy="-14" r="10" fill="${skin}" ${ST}/><circle cx="63" cy="-14" r="10" fill="${skin}" ${ST}/>`;
-  }
-  if(hs === 'long') g += `<path d="M-34 -4 Q-46 46 -26 62 L-14 20Z M34 -4 Q46 46 26 62 L14 20Z" fill="${hair}" ${ST}/>`;
-  g += `<rect x="-9" y="24" width="18" height="26" fill="${skin}" ${ST}/>`;
-  g += `<path d="M-50 150 Q-52 54 -16 46 L16 46 Q52 54 50 150Z" fill="${shirt}" ${ST}/>`;
-  g += `<path d="M-15 46 L0 66 L15 46Z" fill="#fff" ${ST}/>`;
-  if(tie) g += `<path d="M0 64 L-6 76 L0 102 L6 76Z" fill="${tie}" ${ST}/>`;
-  if(tag) g += `<path d="M-15 47 L-6 100 M15 47 L6 100" fill="none" stroke="#e8554e" stroke-width="3"/><rect x="-14" y="98" width="28" height="22" rx="3" fill="#fff" ${ST}/><rect x="-8" y="106" width="16" height="3" rx="1.5" fill="#bbb"/><rect x="-8" y="112" width="10" height="3" rx="1.5" fill="#ddd"/>`;
-  g += `<ellipse cx="-31" cy="3" rx="5" ry="8" fill="${skin}" ${ST}/><ellipse cx="31" cy="3" rx="5" ry="8" fill="${skin}" ${ST}/>`;
-  g += `<ellipse cx="0" cy="0" rx="31" ry="33" fill="${skin}" ${ST}/>`;
-  g += `<path d="M-33 -2 Q-40 -44 0 -41 Q40 -44 33 -2 Q28 -22 8 -27 Q-14 -18 -33 -2Z" fill="${hair}" ${ST}/>`;
-  if(hs === 'bun') g += `<circle cx="0" cy="-48" r="13" fill="${hair}" ${ST}/>`;
-  if(hs === 'curly') g += `<circle cx="-24" cy="-30" r="11" fill="${hair}" ${ST}/><circle cx="0" cy="-38" r="12" fill="${hair}" ${ST}/><circle cx="24" cy="-30" r="11" fill="${hair}" ${ST}/>`;
-  const dots = `<circle cx="-11" cy="-1" r="3.2" fill="#222"/><circle cx="11" cy="-1" r="3.2" fill="#222"/>`;
-  const blush = `<ellipse cx="-21" cy="10" rx="6" ry="3.5" fill="#ff9d9d" opacity=".55"/><ellipse cx="21" cy="10" rx="6" ry="3.5" fill="#ff9d9d" opacity=".55"/>`;
-  const E = {
-    smile:  `<path d="M-17 0 Q-11 -9 -5 0 M5 0 Q11 -9 17 0" fill="none" ${ST}/><path d="M-9 12 Q0 27 9 12Z" fill="#fff" ${ST}/>${blush}`,
-    shout:  `<path d="M-17 0 Q-11 -9 -5 0 M5 0 Q11 -9 17 0" fill="none" ${ST}/><path d="M-13 9 Q0 38 13 9Z" fill="#8a2a2a" ${ST}/>${blush}`,
-    nervous:`${dots}<path d="M-18 -11 L-6 -16 M18 -11 L6 -16" fill="none" ${ST}/><path d="M-9 17 q4.5 -5 9 0 q4.5 5 9 0" fill="none" ${ST}/><path d="M37 -22 q-8 12 0 17 q8 -5 0 -17Z" fill="#8ed1ff" ${ST}/>`,
-    blank:  `${dots}<path d="M-18 -11 L-6 -11 M18 -11 L6 -11" fill="none" ${ST}/><path d="M-6 17 L6 17" fill="none" ${ST}/>`,
-    sleepy: `<path d="M-17 -2 Q-11 5 -5 -2 M5 -2 Q11 5 17 -2" fill="none" ${ST}/><ellipse cx="0" cy="17" rx="4.5" ry="5.5" fill="#fff" ${ST}/><ellipse cx="33" cy="12" rx="4" ry="5" fill="#bfe6ff" stroke="#262626" stroke-width="1.5"/>`,
-    surprised:`<circle cx="-11" cy="-2" r="8" fill="#fff" ${ST}/><circle cx="11" cy="-2" r="8" fill="#fff" ${ST}/><circle cx="-11" cy="-2" r="2.6" fill="#222"/><circle cx="11" cy="-2" r="2.6" fill="#222"/><path d="M-20 -18 L-5 -21 M20 -18 L5 -21" fill="none" ${ST}/><ellipse cx="0" cy="20" rx="6" ry="8" fill="#7a1f1f" ${ST}/><path d="M-44 -30 l-9 -8 M44 -30 l9 -8 M0 -46 v-11" fill="none" stroke="#e8433a" stroke-width="3.2" stroke-linecap="round"/>`
-  };
-  g += E[expr] || E.smile;
-  if(glasses) g += `<g fill="rgba(200,230,255,.35)" ${ST}><circle cx="-12" cy="-1" r="9.5"/><circle cx="12" cy="-1" r="9.5"/><path d="M-2.5 -1 L2.5 -1"/></g>`;
-  g += extra + '</g>';
-  return g;
-}
-const desk = (x,y,w,h,c='#b88a5a') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${c}" ${ST}/><rect x="${x}" y="${y}" width="${w}" height="7" fill="rgba(255,255,255,.35)"/>`;
-const clock = (x,y,r,h,m) => {
-  const ha = (h%12 + m/60) * 30 * Math.PI/180, ma = m * 6 * Math.PI/180;
-  return `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" ${ST}/>` +
-    `<line x1="${x}" y1="${y}" x2="${(x + Math.sin(ha)*r*.5).toFixed(1)}" y2="${(y - Math.cos(ha)*r*.5).toFixed(1)}" ${ST}/>` +
-    `<line x1="${x}" y1="${y}" x2="${(x + Math.sin(ma)*r*.78).toFixed(1)}" y2="${(y - Math.cos(ma)*r*.78).toFixed(1)}" ${ST}/>`;
-};
-function scene1(){
-  return `<rect width="400" height="400" fill="#dbe7f7"/><rect y="282" width="400" height="118" fill="#cbb691"/><rect y="276" width="400" height="8" fill="#b79f78"/>` +
-  `<rect x="256" y="60" width="134" height="86" rx="4" fill="#fff" ${ST}/><rect x="276" y="80" width="94" height="8" rx="4" fill="#9db4dd"/><rect x="288" y="98" width="70" height="8" rx="4" fill="#c9d6ee"/><rect x="296" y="116" width="54" height="14" rx="4" fill="#e8554e" opacity=".8"/>` +
-  person({x:118,y:228,s:1.15,shirt:'#5c4b8a',hair:'#777',glasses:true,tie:'#d9433a',expr:'smile',tag:false}) +
-  `<path d="M48 336 L192 336 L182 400 L58 400Z" fill="#8a6a45" ${ST}/>` +
-  person({x:240,y:268,s:.62,shirt:'#2f4b7c',hair:'#2a2a2a',expr:'nervous'}) +
-  person({x:306,y:274,s:.62,shirt:'#2f8f83',hair:'#5a3a22',hs:'long',expr:'blank'}) +
-  person({x:366,y:268,s:.62,shirt:'#c5527a',hair:'#222',hs:'bun',expr:'nervous'}) +
-  desk(196,324,204,76);
-}
-function scene2(){
-  return `<rect width="400" height="400" fill="#e9eef5"/><rect y="170" width="400" height="230" fill="#d3dcea"/><rect y="164" width="400" height="8" fill="#b9c5d9"/>` +
-  `<g fill="#8a94a6" opacity=".7"><circle cx="165" cy="212" r="4"/><circle cx="188" cy="212" r="4"/><circle cx="211" cy="212" r="4"/></g>` +
-  person({x:62,y:258,s:.72,shirt:'#2f4b7c',hair:'#2a2a2a',expr:'blank'}) +
-  person({x:152,y:256,s:.72,shirt:'#c5527a',hair:'#3a2418',hs:'long',expr:'nervous'}) +
-  person({x:250,y:258,s:.72,shirt:'#4a7a3d',hair:'#5a3a22',hs:'curly',expr:'blank'}) +
-  person({x:340,y:256,s:.72,shirt:'#7a5aa8',hair:'#222',hs:'bun',expr:'nervous'}) +
-  desk(0,322,400,78,'#c89b6a') +
-  `<rect x="40" y="338" width="70" height="46" fill="#fff" ${ST} transform="rotate(-6 75 360)"/><rect x="170" y="344" width="80" height="44" fill="#fff" ${ST} transform="rotate(4 210 366)"/><rect x="290" y="340" width="64" height="42" fill="#fff" ${ST} transform="rotate(-3 322 361)"/>` ;
-}
-function scene3(){
-  return `<rect width="400" height="400" fill="#fbefd5"/><rect y="300" width="400" height="100" fill="#d9c29b"/><rect y="294" width="400" height="8" fill="#c4aa7f"/>` +
-  clock(362,64,24,1,30) +
-  person({x:78,y:240,s:1,shirt:'#5c4b8a',hair:'#777',glasses:true,tie:'#d9433a',expr:'smile',tag:false}) +
-  desk(0,350,150,50,'#8a6a45') +
-  person({x:208,y:286,s:.8,shirt:'#2f8f83',hair:'#5a3a22',hs:'long',expr:'sleepy',extra:'<circle cx="38" cy="-38" r="5" fill="#fff" stroke="#5b6fd0" stroke-width="2"/><circle cx="52" cy="-52" r="8" fill="#fff" stroke="#5b6fd0" stroke-width="2"/><circle cx="70" cy="-70" r="11" fill="#fff" stroke="#5b6fd0" stroke-width="2"/>'}) +
-  person({x:320,y:282,s:.8,shirt:'#2f4b7c',hair:'#2a2a2a',expr:'surprised'}) +
-  desk(160,346,240,54) ;
-}
-function scene4(){
-  const colors = ['#ff5a6e','#ffc83d','#4dc3ff','#7ee06b','#b57cff'];
-  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  let conf = '';
-  for(let i = 0; i < 34; i++){
-    const cx = (rnd() * 400).toFixed(0), cy = (rnd() * 400).toFixed(0), c = colors[i % 5], r = (rnd()*360).toFixed(0);
-    conf += i % 3 ? `<rect x="${cx}" y="${cy}" width="7" height="12" fill="${c}" transform="rotate(${r} ${cx} ${cy})"/>` : `<circle cx="${cx}" cy="${cy}" r="4.5" fill="${c}"/>`;
-  }
-  return `<defs><linearGradient id="g4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffefc2"/><stop offset="1" stop-color="#ffd1e0"/></linearGradient></defs><rect width="400" height="400" fill="url(#g4)"/>` +
-  conf + clock(362,72,24,6,0) +
-  person({x:76,y:292,s:.8,shirt:'#2f4b7c',hair:'#2a2a2a',expr:'shout',armsUp:true}) +
-  person({x:166,y:304,s:.8,shirt:'#c5527a',hair:'#3a2418',hs:'long',expr:'smile',armsUp:true}) +
-  person({x:256,y:300,s:.8,shirt:'#4a7a3d',hair:'#5a3a22',hs:'curly',expr:'smile',armsUp:true}) +
-  person({x:336,y:290,s:.8,shirt:'#7a5aa8',hair:'#222',hs:'bun',expr:'shout',armsUp:true});
-}
-
 const PANELS = [
-  {n:1, cap:'신입사원 입문교육 첫날 · 오전 9시', scene:scene1, bubbles:[
-    {id:'p1a', kind:'say', x:3, y:10, w:58, h:25, tx:45, hint:'강사님의 첫 활동 안내 멘트는?', label:'① 강사'}]},
-  {n:2, cap:'조별 토의 시작 3분째…', scene:scene2, bubbles:[
-    {id:'p2a', kind:'say', x:3, y:10, w:47, h:24, tx:73, hint:'정적을 깨는 용기 있는 첫마디는?', label:'② 말문을 연 신입'},
-    {id:'p2b', kind:'thought', x:53, y:27, w:44, h:20, tx:73, hint:'옆 사람의 속마음은?', label:'② 속마음'}]},
-  {n:3, cap:'점심 먹고 오후 1시 반', scene:scene3, bubbles:[
-    {id:'p3a', kind:'say', x:40, y:34, w:57, h:22, tx:70, hint:'졸다 깬 신입의 대답은?', label:'③ 졸다 깬 신입'}]},
-  {n:4, cap:'오후 6시, 교육 종료!', scene:scene4, bubbles:[
-    {id:'p4a', kind:'say', x:3, y:10, w:50, h:22, tx:31, hint:'교육이 끝난 후 한마디!', label:'④ 조원 A'},
-    {id:'p4b', kind:'say', x:45, y:34, w:52, h:22, tx:75, hint:'우리 조 구호 / 소감은?', label:'④ 조원 B'}]}
+  {n:1, img:'panel1.jpg', bubbles:[
+    {id:'p1a', kind:'say',     x:2,  y:4, w:38, h:22, tx:42, label:'① 선배'},
+    {id:'p1b', kind:'thought', x:44, y:4, w:32, h:22, tx:92, label:'① 신입의 속마음'}]},
+  {n:2, img:'panel2.jpg', bubbles:[
+    {id:'p2a', kind:'say',     x:8,  y:3, w:38, h:22, tx:80, label:'② 신입'},
+    {id:'p2b', kind:'say',     x:50, y:3, w:46, h:22, tx:60, label:'② 팀장'}]},
+  {n:3, img:'panel3.jpg', bubbles:[
+    {id:'p3a', kind:'say',     x:6,  y:2, w:42, h:20, tx:68, label:'③ 신입'},
+    {id:'p3b', kind:'say',     x:52, y:2, w:44, h:20, tx:70, label:'③ 선배'}]},
+  {n:4, img:'panel4.jpg', bubbles:[
+    {id:'p4a', kind:'say',     x:2,  y:3, w:30, h:22, tx:60, label:'④ 조원 A'},
+    {id:'p4b', kind:'say',     x:34, y:3, w:30, h:22, tx:45, label:'④ 신입'},
+    {id:'p4c', kind:'say',     x:66, y:3, w:31, h:22, tx:50, label:'④ 조원 B'}]}
 ];
 const BLANKS = PANELS.flatMap(p => p.bubbles.filter(b => !b.fixed));
 
@@ -340,7 +269,7 @@ function panelHTML(p, texts, mode){
     else if(mode === 'view'){ const t = (texts || {})[bb.id] || ''; b += `<div class="${cls}${t ? '' : ' empty'}" style="${st}"><div class="txt">${t ? esc(t) : '…'}</div></div>`; }
     else b += `<div class="${cls} empty" style="${st}" data-bid="${bb.id}"><div class="bin"><div class="mirror"></div><textarea rows="1" maxlength="${CFG.MAX_CHARS}" aria-label="${esc(bb.label)}"></textarea></div></div>`;
   }
-  return `<div class="panel"><svg viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice" font-family="Jua,'Malgun Gothic',sans-serif">${p.scene()}</svg>${b}</div>`;
+  return `<div class="panel"><img src="${p.img}" alt="" draggable="false">${b}</div>`;
 }
 const panelsHTML = (texts, mode) => `<div class="panels ${mode === 'view' ? 'view' : 'edit'}">${PANELS.map(p => panelHTML(p, texts, mode)).join('')}</div>`;
 
@@ -406,7 +335,7 @@ function celebrate(team, mine){
   document.body.classList.add('party');
   const c = $('#celeb'); c.style.display = 'flex';
   $('.t1', c).textContent = mine ? '우리 조가 해냈어요!' : '축하합니다!';
-  $('.t2', c).textContent = `🏆 1등 ${team}조`;
+  $('.t2', c).textContent = `🏆 1등 ${tname(team)}`;
   $('.t3', c).textContent = mine ? '🎉 최고의 팀워크! 🎉' : '🎉 박수 짝짝짝! 🎉';
   clearTimeout(celebTimer);
   celebTimer = setTimeout(stopCelebrate, 9000);
@@ -442,6 +371,7 @@ function learnerApp(){
       <input type="text" id="nm" maxlength="10" placeholder="이름 또는 닉네임">
       <button class="btn primary" id="go" style="width:100%;font-size:18px;padding:13px">입장하기</button>
     </div>${REMOTE ? '' : '<div class="demo">⚠ 데모 모드: Firebase 주소가 설정되지 않아 같은 브라우저 안에서만 동작합니다. (설정 방법은 README 참고)</div>'}</div>`;
+    DB.read().then(d => { S = d || {}; $$('.teamgrid button').forEach(b => { b.textContent = tname(+b.dataset.t); }); }).catch(() => {});
     $$('.teamgrid button').forEach(b => b.onclick = () => { sel = +b.dataset.t; $$('.teamgrid button').forEach(x => x.classList.toggle('sel', x === b)); });
     $('#go').onclick = () => {
       const name = $('#nm').value.trim();
@@ -457,11 +387,12 @@ function learnerApp(){
     const dirty = new Set(), lastInput = {}, timers = {};
     let stage = '';
     app.innerHTML = `<div class="top">
-        <span class="badge">${me.team}조</span>
+        <span class="badge" id="tbadge">${me.team}조</span><button class="link" id="tren" title="조 이름 바꾸기">✏️ 이름</button>
         <div class="who"><div id="mem">접속 확인 중…</div><div>${esc(me.name)} · <button class="link" id="chg">조 변경</button></div></div>
         <div class="timer" id="tm">--:--</div></div>
       <div class="stage" id="stage"></div>
       <div class="footbar hidden" id="foot"><span id="fill" style="font-weight:700"></span><button class="btn ok" id="sub">✅ 우리 조 제출</button></div>`;
+    $('#tren').onclick = () => renameTeam(me.team);
     $('#chg').onclick = () => { if(confirm('조를 바꾸시겠어요?')){ ls.del('wt_me'); location.reload(); } };
 
     const writeText = (id) => {
@@ -473,7 +404,7 @@ function learnerApp(){
     function build(st){
       const el = $('#stage');
       if(st === 'idle'){
-        el.innerHTML = `<div class="wait card"><div class="big">⏳</div><h1>${me.team}조 준비 완료!</h1><p>관리자가 시작하면 웹툰이 열려요.<br>조원들이 모두 모일 때까지 기다려 주세요.</p></div><div id="ranking"></div>`;
+        el.innerHTML = `<div class="wait card"><div class="big">⏳</div><h1>${esc(tname(me.team))} 준비 완료!</h1><p>관리자가 시작하면 웹툰이 열려요.<br>조원들이 모두 모일 때까지 기다려 주세요.</p></div><div id="ranking"></div>`;
         $('#foot').classList.add('hidden');
         return;
       }
@@ -504,12 +435,14 @@ function learnerApp(){
       const want = st === 'idle' ? 'wait' : 'play';
       if(want !== stage){ stage = want; build(st); }
       const team = teamsOf()[tk] || {};
+      $('#tbadge').textContent = tname(me.team);
+      const wh = $('.wait h1'); if(wh) wh.textContent = tname(me.team) + ' 준비 완료!';
       // 접속자
       const on = onlineOf(tk);
       $('#mem').textContent = `👥 ${on.length}명 접속 · ${on.map(o => o.name).join(', ')}`;
       // 순위
       const rk = Object.entries(S.ranks || {}).map(([k,r]) => [tnum(k), +r]).sort((a,b) => a[1]-b[1]);
-      const rkHTML = rk.length ? `<div class="ranking"><h3>🏆 순위 발표</h3>${rk.map(([t,r]) => `<div class="rk ${t === me.team ? 'me' : ''}">${['🥇','🥈','🥉'][r-1] || '🏅'} ${r}등 · ${t}조${t === me.team ? ' (우리 조!)' : ''}</div>`).join('')}</div>` : '';
+      const rkHTML = rk.length ? `<div class="ranking"><h3>🏆 순위 발표</h3>${rk.map(([t,r]) => `<div class="rk ${t === me.team ? 'me' : ''}">${['🥇','🥈','🥉'][r-1] || '🏅'} ${r}등 · ${esc(tname(t))}${t === me.team ? ' (우리 조!)' : ''}</div>`).join('')}</div>` : '';
       if(rkHTML !== lastRank){ lastRank = rkHTML; const r = $('#ranking'); if(r) r.innerHTML = rkHTML; }
       if(stage === 'play'){
         const edit = st === 'running';
@@ -618,7 +551,7 @@ function adminApp(){
     await DB.write('game', {...g, status:'running', endsAt: Math.max(g.endsAt, now()) + 60000}); poll();
   };
   $('#bStop').onclick = async () => { if(gameStatus() !== 'running') return; if(!confirm('지금 바로 입력을 종료할까요?')) return; await DB.write('game', {...S.game, status:'ended'}); poll(); };
-  $('#bReset').onclick = async () => { if(!confirm('모든 조의 작성 내용, 제출, 순위를 삭제하고 처음 상태로 되돌립니다. 계속할까요?')) return; await DB.remove(''); seenCeleb = null; S = {}; toast('초기화했습니다'); poll(); };
+  $('#bReset').onclick = async () => { if(!confirm('모든 조의 작성 내용, 제출, 순위를 삭제하고 처음 상태로 되돌립니다. 계속할까요?')) return; const keepNames = S.teamNames || null; await DB.remove(''); if(keepNames) await DB.write('teamNames', keepNames); seenCeleb = null; S = keepNames ? {teamNames: keepNames} : {}; toast('초기화했습니다'); poll(); };
   $('#bCeleb').onclick = () => { const r = Object.entries(S.ranks || {}).find(([,v]) => +v === 1); if(!r) return toast('1등으로 지정된 조가 없습니다'); fireCeleb(tnum(r[0])); };
 
   async function fireCeleb(team){ const at = now(); seenCeleb = at; await DB.write('celebrate', {team, at}); celebrate(team, false); }
@@ -640,7 +573,7 @@ function adminApp(){
     $('#dur').disabled = st === 'running';
     const data = Array.from({length:CFG.TEAM_COUNT}, (_,i) => {
       const tk = tkey(i+1), t = teamsOf()[tk] || {}, texts = t.texts || {};
-      return {n:i+1, tk, texts, sub:!!t.submitted, on:onlineOf(tk).map(o => o.name).sort(), rank: +((S.ranks || {})[tk]) || 0};
+      return {n:i+1, tk, name:tname(i+1), texts, sub:!!t.submitted, on:onlineOf(tk).map(o => o.name).sort(), rank: +((S.ranks || {})[tk]) || 0};
     });
     const sig = JSON.stringify(data) + st;
     if(!force && sig === lastSig) return; lastSig = sig;
@@ -648,7 +581,7 @@ function adminApp(){
       const filled = BLANKS.filter(b => (d.texts[b.id] || '').trim()).length;
       return `<div class="card tcard ${d.rank === 1 ? 'first' : ''}">
         ${d.rank ? `<div class="rankflag">${['🥇','🥈','🥉'][d.rank-1] || '🏅'}</div>` : ''}
-        <h3>${d.n}조 <span class="chip ${d.on.length ? 'g' : ''}">👥 ${d.on.length}명</span><span class="chip ${filled === BLANKS.length ? 'g' : ''}">💬 ${filled}/${BLANKS.length}</span>${d.sub ? '<span class="chip g">✅ 제출</span>' : ''}</h3>
+        <h3>${esc(tname(d.n))} <button class="link" data-ren="${d.n}" title="조 이름 바꾸기">✏️</button> <span class="chip ${d.on.length ? 'g' : ''}">👥 ${d.on.length}명</span><span class="chip ${filled === BLANKS.length ? 'g' : ''}">💬 ${filled}/${BLANKS.length}</span>${d.sub ? '<span class="chip g">✅ 제출</span>' : ''}</h3>
         <div style="font-size:12px;color:#777;min-height:16px">${esc(d.on.join(', ')) || '접속자 없음'}</div>
         <ul>${BLANKS.map(b => `<li><b>${esc(b.label)}</b> ${(d.texts[b.id] || '').trim() ? esc(d.texts[b.id]) : '<i>(비어 있음)</i>'}</li>`).join('')}</ul>
         <button class="btn" data-big="${d.n}">🔍 4컷 크게 보기</button>
@@ -657,13 +590,14 @@ function adminApp(){
     }).join('');
     $$('[data-rk]').forEach(b => b.onclick = () => { const [t,r] = b.dataset.rk.split(':').map(Number); setRank(t, r); });
     $$('[data-big]').forEach(b => b.onclick = () => openBig(+b.dataset.big));
+    $$('[data-ren]').forEach(b => b.onclick = () => renameTeam(+b.dataset.ren));
     if(bigTeam) renderBig();
   }
   let bigTeam = 0;
   function openBig(n){ bigTeam = n; renderBig(); }
   function renderBig(){
     const n = bigTeam, texts = textsOf(tkey(n));
-    $('#modal').innerHTML = `<div class="modal"><div class="in"><div class="bar"><h2>${n}조 작품</h2>
+    $('#modal').innerHTML = `<div class="modal"><div class="in"><div class="bar"><h2>${esc(tname(n))} 작품</h2>
       <button class="btn" id="bp">◀ 이전</button><button class="btn" id="bn">다음 ▶</button><button class="btn ok" id="b1">🥇 1등으로 선정</button><button class="btn" id="bx">닫기 ✕</button></div>${panelsHTML(texts, 'view')}</div></div>`;
     $('#bp').onclick = () => { bigTeam = n === 1 ? CFG.TEAM_COUNT : n - 1; renderBig(); };
     $('#bn').onclick = () => { bigTeam = n === CFG.TEAM_COUNT ? 1 : n + 1; renderBig(); };
